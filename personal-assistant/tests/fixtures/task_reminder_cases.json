@@ -1,0 +1,7 @@
+[
+  {"id":9,"text":"明天晚上提醒我洗衣服","intent":"REMINDER","date_reference":"tomorrow","daypart":"evening","expected":"2026-09-23T19:00:00+08:00","mutations":2},
+  {"id":10,"text":"完成了","action":"complete","task_status":"DONE","reminder_status":"COMPLETED"},
+  {"id":11,"text":"无回复","action":"no_reply","max_follow_ups":1,"final_status":"EXHAUSTED"},
+  {"id":12,"text":"别再催洗衣服","action":"cancel","reminder_status":"CANCELLED"},
+  {"id":20,"text":"明早提醒喝水","intent":"REMINDER","date_reference":"tomorrow","daypart":"morning","timezone":"Asia/Shanghai","expected_hour":8,"expected_minute":30}
+]

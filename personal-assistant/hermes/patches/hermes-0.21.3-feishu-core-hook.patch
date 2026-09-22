@@ -1,0 +1,54 @@
+diff --git a/plugins/platforms/feishu/adapter.py b/plugins/platforms/feishu/adapter.py
+--- a/plugins/platforms/feishu/adapter.py
++++ b/plugins/platforms/feishu/adapter.py
+@@ -32,0 +33 @@ import re
++import subprocess
+@@ -2957,0 +2959,3 @@ class FeishuAdapter(BasePlatformAdapter):
++        if self._personal_assistant_core_enabled():
++            await self._dispatch_personal_assistant_core(event)
++            return
+@@ -2959,0 +2964,44 @@ class FeishuAdapter(BasePlatformAdapter):
++    def _personal_assistant_core_enabled(self) -> bool:
++        return bool(self.config.extra.get("personal_assistant_core_enabled", False))
++
++    async def _dispatch_personal_assistant_core(self, event: MessageEvent) -> None:
++        """Route Feishu text through the deterministic local Personal Assistant Core."""
++        try:
++            payload = await self._run_blocking(self._run_personal_assistant_core, event)
++            text = str(payload.get("text") or "请求未执行，且没有产生重复写入。")
++        except Exception:
++            logger.exception("[Feishu] Personal Assistant Core dispatch failed")
++            text = "请求未执行，且没有产生重复写入。"
++        chat_id = str(getattr(event.source, "chat_id", "") or "")
++        await self.send(chat_id, text, reply_to=event.message_id)
++
++    @staticmethod
++    def _run_personal_assistant_core(event: MessageEvent) -> dict:
++        home = get_hermes_home()
++        command = home / "bin" / "personal-assistant.cmd"
++        env = dict(os.environ)
++        env["HERMES_HOME"] = str(home)
++        env["HERMES_SESSION_MESSAGE_ID"] = str(event.message_id or "")
++        env["HERMES_SESSION_USER_ID"] = str(
++            event.user_id or getattr(event.source, "user_id", "") or ""
++        )
++        completed = subprocess.run(
++            [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", str(command)],
++            input=json.dumps({"text": event.text}, ensure_ascii=False),
++            text=True,
++            encoding="utf-8",
++            capture_output=True,
++            timeout=120,
++            env=env,
++            check=False,
++        )
++        lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
++        if not lines:
++            raise RuntimeError(f"Personal Assistant Core returned no JSON (exit={completed.returncode})")
++        payload = json.loads(lines[-1])
++        if not isinstance(payload, dict) or payload.get("status") not in {
++            "completed", "needs_clarification", "failed", "chat",
++        }:
++            raise RuntimeError("Personal Assistant Core returned an invalid envelope")
++        return payload
++

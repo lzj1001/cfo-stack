@@ -48,6 +48,7 @@ TASK, REMINDER, CAPTURE, and REVIEW are recognized but remain side-effect free u
 ## Phase 3 Task and Reminder behavior
 
 - `明天晚上提醒我洗衣服` resolves to tomorrow 19:00 Asia/Shanghai and creates one Task plus one Reminder.
+- `14点到17点去打球，提前半个钟提醒` is parsed deterministically as a 13:30 reminder; the program computes the lead time and never delegates the schedule arithmetic to the model.
 - Dayparts are deterministic: 08:30 / 12:00 / 15:00 / 19:00 / 20:00.
 - Derived times in 00:00–08:00 shift to 08:00; an explicit clock time is honored.
 - `完成了`、`晚点提醒`、`今天不做`、`别再催` bypass the LLM and use program-owned transitions.

@@ -105,6 +105,24 @@ def test_explicit_idea_prefix_routes_to_capture_without_llm():
     assert llm.calls == []
 
 
+def test_schedule_with_event_window_and_lead_time_routes_deterministically():
+    llm = FakeLLM({})
+    result = asyncio.run(
+        Router(llm, model="router-model").route(
+            context("我今天有个日程，就是14点要去打球，14点到17点之间，那你要提前提醒我，提前半个钟吧")
+        )
+    )
+
+    assert result.intent is Intent.REMINDER
+    assert result.task_reminder is not None
+    assert result.task_reminder.title == "打球"
+    assert result.task_reminder.date_reference == "today"
+    assert result.task_reminder.explicit_time == "13:30"
+    assert result.task_reminder.details == "活动时间 14:00–17:00；提前 30 分钟提醒"
+    assert result.ambiguities == []
+    assert llm.calls == []
+
+
 def test_low_confidence_is_never_executable():
     gate = ExecutionGate.evaluate(
         decision(confidence="0.64", items=[], reason_code="uncertain"), "可能是午饭35"

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from datetime import timedelta
 import re
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -147,6 +149,9 @@ class Router:
                 ambiguities=[],
                 reason_code="explicit_capture",
             )
+        deterministic_reminder = _parse_explicit_lead_reminder(ctx)
+        if deterministic_reminder is not None:
+            return deterministic_reminder
         messages = [
             {
                 "role": "system",
@@ -167,6 +172,74 @@ class Router:
             },
         ]
         return await self._llm.structured(messages, RouterDecision, model=self._model)
+
+
+def _parse_explicit_lead_reminder(ctx: MessageContext) -> RouterDecision | None:
+    if "提醒" not in ctx.text or "提前" not in ctx.text:
+        return None
+    range_match = re.search(
+        r"(?P<start>\d{1,2})\s*点\s*到\s*(?P<end>\d{1,2})\s*点", ctx.text
+    )
+    time_match = range_match or re.search(r"(?P<start>\d{1,2})\s*点", ctx.text)
+    lead_match = re.search(
+        r"提前\s*(?P<value>半个钟|半小时|\d+(?:\.\d+)?)\s*(?P<unit>分钟|分|小时|钟)?",
+        ctx.text,
+    )
+    title_match = re.search(r"(?:要去|去|参加)([^，,。！？]+)", ctx.text)
+    if not time_match or not lead_match or not title_match:
+        return None
+
+    start_hour = int(time_match.group("start"))
+    end_hour = time_match.group("end")
+    if start_hour > 23 or (end_hour is not None and int(end_hour) > 23):
+        return None
+    value = lead_match.group("value")
+    if value in {"半个钟", "半小时"}:
+        lead_minutes = 30
+    elif lead_match.group("unit") in {"小时", "钟"}:
+        lead_minutes = int(float(value) * 60)
+    else:
+        lead_minutes = int(float(value))
+    if lead_minutes <= 0:
+        return None
+
+    try:
+        zone = ZoneInfo(ctx.timezone)
+    except Exception:
+        return None
+    local = ctx.received_at.astimezone(zone)
+    event_at = local.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+    reminder_at = event_at - timedelta(minutes=lead_minutes)
+    if reminder_at < local:
+        return None
+    date_reference = "today"
+    if reminder_at.date() == local.date() + timedelta(days=1):
+        date_reference = "tomorrow"
+    elif reminder_at.date() != local.date():
+        return None
+
+    title = title_match.group(1).strip()
+    details = f"活动时间 {start_hour:02d}:00"
+    if end_hour is not None:
+        details += f"–{int(end_hour):02d}:00"
+    details += f"；提前 {lead_minutes} 分钟提醒"
+    return RouterDecision(
+        schema_version="router-v1",
+        intent=Intent.REMINDER,
+        confidence="1.00",
+        items=[],
+        correction=None,
+        task_reminder=TaskReminderRequest(
+            operation_index=0,
+            title=title,
+            details=details,
+            date_reference=date_reference,
+            explicit_time=reminder_at.strftime("%H:%M"),
+            priority="medium",
+        ),
+        ambiguities=[],
+        reason_code="explicit_lead_time_reminder",
+    )
 
 
 @dataclass(frozen=True)
